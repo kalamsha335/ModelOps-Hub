@@ -1,0 +1,50 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment Variables
+.env
+!.env.example
+
+# Database files
+*.db
+*.sqlite3
+modelops.db
+
+# MLflow & Local Artifacts
+mlruns/
+artifacts/models/
+artifacts/reports/
+artifacts/pipelines/
+*.pkl
+*.joblib
+
+# Large Datasets & Archives
+data/raw/*.csv
+data/raw/*.zip
+archive*/
+*.zip
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+*.log
+npm-debug.log*
+
+# OS & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

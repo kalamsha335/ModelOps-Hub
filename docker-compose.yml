@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # Database Layer: PostgreSQL 16
+  # Stores application metadata, predictions, drift alerts, and MLflow backend
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: modelops_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-modelops_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-modelops_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # MLflow Tracking & Registry Server
+  # Experiment tracking, model artifacts, and stage promotion
+  # ==========================================
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.11.1
+    container_name: modelops_mlflow
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      - BACKEND_STORE_URI=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/modelops_db
+      - ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - ./artifacts:/mlflow/artifacts
+      - ./mlruns:/mlflow/mlruns
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/modelops_db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+
+  # ==========================================
+  # Backend API & Serving Layer: FastAPI
+  # Prediction endpoints, dynamic model loader, monitoring APIs
+  # ==========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: modelops_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/modelops_db
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - FRONTEND_URL=http://localhost:5173
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./mlruns:/app/mlruns
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ==========================================
+  # Workflow Orchestrator: Prefect
+  # Scheduled training, drift monitoring jobs, retraining triggers
+  # ==========================================
+  prefect:
+    image: prefecthq/prefect:2.16.8-python3.11
+    container_name: modelops_prefect
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4200:4200"
+    environment:
+      - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/modelops_db
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+    command: prefect server start --host 0.0.0.0
+
+  # ==========================================
+  # Frontend UI: React + Vite + Tailwind CSS
+  # ModelOps Hub enterprise console
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: modelops_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+    driver: local
