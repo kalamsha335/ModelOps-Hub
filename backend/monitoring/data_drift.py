@@ -100,31 +100,55 @@ class DataDriftDetector:
         else:
             overall_status = "Healthy"
 
-        # 5. Generate Evidently AI HTML Report (if requested)
-        html_report_path = None
+        # 5. Generate Statistical & Evidently AI HTML Report
+        reports_dir = Path(settings.ARTIFACTS_DIR) / "monitoring" / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        html_report_path = str(reports_dir / f"{report_id}.html")
+
+        # 5a. Always create the high-performance executive HTML report with PSI & KS metrics
+        self._generate_custom_html_report(
+            html_report_path=html_report_path,
+            report_id=report_id,
+            timestamp=timestamp,
+            overall_status=overall_status,
+            drift_score=drift_score,
+            drifted_features=drifted_features,
+            features=features,
+            feature_metrics=feature_metrics,
+            sample_size=len(current_df)
+        )
+
+        # 5b. Generate Evidently AI 0.7 HTML Report (if requested)
         if generate_evidently_html:
             try:
-                # Disable telemetry for offline execution
                 os.environ["EVIDENTLY_DISABLE_TELEMETRY"] = "1"
                 os.environ["ITERATIVE_DO_NOT_TRACK"] = "1"
-                from evidently.report import Report
-                from evidently.metric_preset import DataDriftPreset
+                
+                # Sample 500 rows for rapid non-blocking evaluation
+                sample_n = min(len(reference_df), len(current_df), 500)
+                ref_sample = reference_df[features].sample(sample_n, random_state=42)
+                curr_sample = current_df[features].sample(sample_n, random_state=42)
 
-                reports_dir = Path(settings.ARTIFACTS_DIR) / "monitoring" / "reports"
-                reports_dir.mkdir(parents=True, exist_ok=True)
-                html_report_path = str(reports_dir / f"{report_id}.html")
+                try:
+                    # Modern Evidently 0.7+ API
+                    from evidently import Report
+                    from evidently.presets import DataDriftPreset
 
-                # Sample up to 5,000 rows for report generation speed if batch is large
-                ref_sample = reference_df[features].sample(min(len(reference_df), 5000), random_state=42)
-                curr_sample = current_df[features].sample(min(len(current_df), 5000), random_state=42)
+                    evidently_report = Report(metrics=[DataDriftPreset()])
+                    snapshot = evidently_report.run(reference_data=ref_sample, current_data=curr_sample)
+                    snapshot.save_html(html_report_path)
+                    logger.info(f"Generated Evidently 0.7 HTML report at {html_report_path}")
+                except (ImportError, AttributeError):
+                    # Legacy Evidently API fallback
+                    from evidently.legacy.report import Report as LegacyReport
+                    from evidently.legacy.metric_preset import DataDriftPreset as LegacyDataDriftPreset
 
-                evidently_report = Report(metrics=[DataDriftPreset()])
-                evidently_report.run(reference_data=ref_sample, current_data=curr_sample)
-                evidently_report.save_html(html_report_path)
-                logger.info(f"Generated Evidently HTML report at {html_report_path}")
+                    legacy_report = LegacyReport(metrics=[LegacyDataDriftPreset()])
+                    legacy_report.run(reference_data=ref_sample, current_data=curr_sample)
+                    legacy_report.save_html(html_report_path)
+                    logger.info(f"Generated Legacy Evidently HTML report at {html_report_path}")
             except Exception as e:
-                logger.warning(f"Evidently HTML report generation skipped: {e}")
-                html_report_path = None
+                logger.warning(f"Evidently HTML report generation skipped: {e}. Preserved executive report.")
 
         # 6. Save to Database
         close_db = False
@@ -199,6 +223,122 @@ class DataDriftDetector:
         finally:
             if close_db:
                 db.close()
+
+    def _generate_custom_html_report(
+        self,
+        html_report_path: str,
+        report_id: str,
+        timestamp: datetime,
+        overall_status: str,
+        drift_score: float,
+        drifted_features: set,
+        features: list,
+        feature_metrics: dict,
+        sample_size: int
+    ) -> None:
+        """Generates an executive standalone HTML report with PSI and KS test statistics."""
+        status_color = "#10b981" if overall_status == "Healthy" else ("#f59e0b" if overall_status == "Warning" else "#ef4444")
+        status_bg = "#064e3b" if overall_status == "Healthy" else ("#78350f" if overall_status == "Warning" else "#7f1d1d")
+
+        rows_html = ""
+        for feat in sorted(features):
+            m = feature_metrics.get(feat, {})
+            psi = m.get("psi", 0.0)
+            psi_stat = m.get("psi_status", "HEALTHY")
+            ks_stat = m.get("ks_statistic", 0.0)
+            ks_pval = m.get("ks_pvalue", 1.0)
+            is_drift = m.get("is_drifted", False)
+
+            row_badge = f'<span style="padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; background: {"#7f1d1d" if psi_stat == "CRITICAL" else ("#78350f" if psi_stat == "WARNING" else "#064e3b")}; color: {"#fca5a5" if psi_stat == "CRITICAL" else ("#fcd34d" if psi_stat == "WARNING" else "#6ee7b7")}">{psi_stat}</span>'
+            decision_badge = f'<span style="padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; background: {"#7f1d1d" if is_drift else "#064e3b"}; color: {"#fca5a5" if is_drift else "#6ee7b7"}">{"DRIFT DETECTED" if is_drift else "STABLE"}</span>'
+
+            rows_html += f"""
+            <tr style="border-bottom: 1px solid #1e293b;">
+                <td style="padding: 10px 16px; font-family: monospace; font-size: 13px; color: #f8fafc;">{feat}</td>
+                <td style="padding: 10px 16px; font-family: monospace; font-size: 13px; color: #94a3b8;">{psi:.4f}</td>
+                <td style="padding: 10px 16px;">{row_badge}</td>
+                <td style="padding: 10px 16px; font-family: monospace; font-size: 13px; color: #94a3b8;">{ks_stat:.4f}</td>
+                <td style="padding: 10px 16px; font-family: monospace; font-size: 13px; color: #94a3b8;">{ks_pval:.4e}</td>
+                <td style="padding: 10px 16px;">{decision_badge}</td>
+            </tr>
+            """
+
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ModelOps Hub - Data Drift Report {report_id}</title>
+    <style>
+        body {{ font-family: system-ui, -apple-system, sans-serif; background: #090d16; color: #e2e8f0; margin: 0; padding: 24px; }}
+        .card {{ background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; }}
+        .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }}
+        .stat-card {{ background: #131d33; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; }}
+        .stat-label {{ font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }}
+        .stat-value {{ font-size: 24px; font-weight: 700; color: #ffffff; margin-top: 4px; }}
+        table {{ width: 100%; border-collapse: collapse; text-align: left; }}
+        th {{ background: #131d33; padding: 12px 16px; font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0;">Statistical Data Drift & Distribution Health Report</h1>
+            <p style="font-size: 13px; color: #94a3b8; margin: 4px 0 0 0;">Report ID: <code>{report_id}</code> | Evaluated at: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+        </div>
+        <div>
+            <span style="display: inline-block; padding: 6px 16px; border-radius: 9999px; font-weight: 700; font-size: 14px; background: {status_bg}; color: {status_color}; border: 1px solid {status_color};">
+                STATUS: {overall_status.upper()}
+            </span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size: 16px; font-weight: 600; color: #f8fafc; margin-top: 0;">Executive Summary</h2>
+        <div class="grid">
+            <div class="stat-card">
+                <div class="stat-label">Composite Drift Score</div>
+                <div class="stat-value" style="color: {status_color};">{drift_score:.4f}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Drifted Features</div>
+                <div class="stat-value">{len(drifted_features)} / {len(features)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Production Batch Size</div>
+                <div class="stat-value">{sample_size:,}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Evaluation Engine</div>
+                <div class="stat-value" style="font-size: 16px; color: #38bdf8;">PSI + KS-Test + Evidently</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size: 16px; font-weight: 600; color: #f8fafc; margin-top: 0; margin-bottom: 16px;">Feature Distribution Shift Analysis (All 30 Features)</h2>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Population Stability Index (PSI)</th>
+                        <th>PSI Health Status</th>
+                        <th>KS Statistic</th>
+                        <th>KS p-value</th>
+                        <th>Distribution Verdict</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>"""
+        with open(html_report_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
 
     def get_latest_report(self, db: Optional[Session] = None) -> Optional[Dict[str, Any]]:
         """Retrieves the most recent drift report from the database."""
@@ -275,3 +415,4 @@ class DataDriftDetector:
 
 # Module-level instance
 drift_detector = DataDriftDetector()
+

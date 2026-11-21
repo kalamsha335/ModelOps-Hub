@@ -5,6 +5,13 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
+# Set isolated paths to prevent Windows permission conflicts on User profile directory
+prefect_dir = BASE_DIR / "artifacts" / ".prefect"
+prefect_dir.mkdir(parents=True, exist_ok=True)
+os.environ["PREFECT_HOME"] = str(prefect_dir)
+os.environ["EVIDENTLY_DISABLE_TELEMETRY"] = "1"
+os.environ["ITERATIVE_DO_NOT_TRACK"] = "1"
+
 class Settings(BaseSettings):
     # Application Info
     APP_NAME: str = "ModelOps Hub"
