@@ -61,6 +61,14 @@ def run_training_pipeline(
     # 2. Stratified Partitioning (70% Train, 15% Val, 15% Test)
     X_train_raw, y_train, X_val_raw, y_val, X_test_raw, y_test = stratified_split(df)
 
+    # Save reference data partition for baseline drift monitoring
+    ref_dir = Path(settings.REFERENCE_DATA_DIR)
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    ref_df = X_val_raw.copy()
+    ref_df["Class"] = y_val.values
+    ref_df.to_parquet(ref_dir / "reference_data.parquet", index=False)
+    logger.info(f"Saved reference monitoring baseline to {ref_dir / 'reference_data.parquet'} ({len(ref_df)} rows)")
+
     # 3. Leakage-Free Preprocessing Pipeline
     preprocessor = CreditCardPreprocessor()
     preprocessor.fit(X_train_raw)
@@ -220,3 +228,4 @@ def run_training_pipeline(
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     run_training_pipeline()
+
