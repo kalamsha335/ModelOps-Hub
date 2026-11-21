@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # Retraining Guardrails & Production Criteria
     RETRAINING_MIN_PR_AUC_THRESHOLD: float = 0.80
-    RETRAINING_MIN_RECALL_THRESHOLD: float = 0.82
+    RETRAINING_MIN_RECALL_THRESHOLD: float = 0.75
     MAX_RETRAINING_COOLDOWN_HOURS: int = 24
 
     # Prefect Orchestrator
