@@ -122,37 +122,115 @@ docker-compose up --build
 ModelOps-Hub/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/endpoints/  # FastAPI REST routes
-│   │   ├── core/              # Configuration & settings
-│   │   ├── database/          # SQLAlchemy session & engine
-│   │   ├── models/            # SQLAlchemy DB models
-│   │   ├── schemas/           # Pydantic validation schemas
-│   │   ├── services/          # Business logic services
-│   │   └── main.py            # FastAPI entry point
-│   ├── training/              # Training, tuning & MLflow pipeline
-│   ├── monitoring/            # Drift (PSI, KS, Evidently) engines
-│   ├── workflows/             # Prefect orchestration workflows
-│   ├── tests/                 # Pytest automated test suites
+│   │   ├── api/v1/endpoints/  # FastAPI REST routes (predict, registry, monitoring, retraining)
+│   │   ├── core/              # Configuration & Pydantic settings
+│   │   ├── database/          # SQLAlchemy session & fallback SQLite/PostgreSQL
+│   │   ├── models/            # SQLAlchemy DB models (9 tables)
+│   │   ├── schemas/           # Pydantic request/response schemas
+│   │   ├── services/          # Dynamic model serving & hot-reloading
+│   │   └── main.py            # FastAPI entry point & health check
+│   ├── training/              # Training, tuning & MLflow pipeline (Optuna, XGBoost, LR)
+│   ├── monitoring/            # Statistical drift (PSI, KS, Evidently) & Concept drift
+│   ├── workflows/             # Prefect orchestration workflows (retraining, monitoring)
+│   ├── tests/                 # Automated test suite (26 passing tests)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── components/        # Reusable UI components
-│   │   ├── pages/             # Dashboard views
-│   │   ├── layouts/           # Sidebar & top navigation
-│   │   ├── services/          # Axios/fetch API clients
-│   │   └── App.jsx
+│   │   ├── components/        # Navbar, Sidebar, status pills
+│   │   ├── pages/             # Overview, Registry, Drift, Concept, Retraining, Playground
+│   │   ├── services/          # Axios API client
+│   │   ├── App.jsx
+│   │   └── main.jsx
 │   ├── package.json
+│   ├── tailwind.config.js
+│   ├── vite.config.js
 │   └── Dockerfile
 ├── data/
 │   ├── raw/                   # Kaggle creditcard.csv
-│   ├── processed/             # Cleaned & scaled sets
-│   ├── reference/             # Baseline training distribution
-│   └── current/               # Production inference batches
-├── mlruns/                    # MLflow local tracking
-├── artifacts/                 # Model & scaler binaries
-├── docker-compose.yml
-├── ARCHITECTURE.md
+│   ├── reference/             # 42,721 baseline validation rows (.parquet)
+│   └── current/               # Incoming production inference stream
+├── artifacts/
+│   ├── champion/              # Champion XGBoost model & preprocessor binaries
+│   └── monitoring/reports/    # Generated Evidently AI HTML reports
+├── docker-compose.yml         # 5-container architecture (Postgres, MLflow, FastAPI, Prefect, React)
+├── ARCHITECTURE.md            # Deep-dive system design & data flow diagrams
+├── INTERVIEW_PREP.md          # 10-minute presentation outline & 10 Q&A for senior interviews
 └── README.md
 ```
+
+---
+
+## 7. Quickstart Guide
+
+### Option A: Local Development (Fastest)
+
+1. **Activate Python Environment & Install Dependencies**:
+   ```bash
+   pip install -r backend/requirements.txt
+   ```
+
+2. **Execute Automated Machine Learning Pipeline**:
+   ```bash
+   python backend/training/train.py
+   ```
+   *Trains Logistic Regression & XGBoost, logs to MLflow, and saves the Champion model.*
+
+3. **Start the FastAPI Backend**:
+   ```bash
+   uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+   *Interactive API Docs available at `http://localhost:8000/docs`.*
+
+4. **Start the React Frontend Console**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+   *Console UI available at `http://localhost:5173`.*
+
+---
+
+### Option B: Docker Compose (Full-Stack 5-Container Stack)
+
+Run all services (PostgreSQL 16, MLflow 2.11, FastAPI, Prefect 2.16, React UI):
+
+```bash
+docker-compose up --build
+```
+
+- **React Frontend**: `http://localhost:5173`
+- **FastAPI Serving & Docs**: `http://localhost:8000/docs`
+- **MLflow Tracking & Registry**: `http://localhost:5000`
+- **Prefect Orchestrator**: `http://localhost:4200`
+- **PostgreSQL Database**: `localhost:5432`
+
+---
+
+## 8. Verified Test Suite Matrix (26/26 Passing)
+
+To execute the entire automated test suite:
+
+```bash
+python -m pytest backend/tests/ -v
+```
+
+| Test Module | Coverage Scope | Status |
+|---|---|---|
+| `test_env.py` | Package imports, DB connectivity, schema creation, `/health` | **3/3 PASSED** |
+| `test_training.py` | Schema checks, EDA, leakage-free scaling, stratified splits, PR-AUC evaluation | **7/7 PASSED** |
+| `test_registry.py` | Model registration, quantitative validation gates, staging/prod promotion, atomic rollback | **2/2 PASSED** |
+| `test_monitoring.py` | PSI calculation, KS distribution tests, Evidently reports, concept drift with true labels | **4/4 PASSED** |
+| `test_workflows.py` | Concurrency guardrails, Champion vs. Challenger inferior rejection, automated retraining | **3/3 PASSED** |
+| `test_api.py` | Serving endpoints (`/predict`, `/predict/batch`, `/feedback`, `/logs`, `/monitoring`, `/registry`) | **7/7 PASSED** |
+| **Total** | **End-to-End Enterprise Verification** | **26/26 PASSED (100%)** |
+
+---
+
+## 9. Technical Interview & Mentoring Resources
+
+- **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**: Full architecture specification, Mermaid diagrams, database schemas, and failure recovery modes.
+- **[`INTERVIEW_PREP.md`](./INTERVIEW_PREP.md)**: 10-minute slide-by-slide presentation script, architectural justifications, code-level trade-offs, and 10 battle-tested interview questions with answers for 2026 CS graduates.
+
 
