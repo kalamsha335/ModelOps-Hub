@@ -1,10 +1,8 @@
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
-import os
 from pathlib import Path
+import os
 
-# Base project directory
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 class Settings(BaseSettings):
@@ -24,8 +22,8 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     SQLITE_FALLBACK_URL: str = f"sqlite:///{BASE_DIR / 'modelops.db'}"
 
-    # MLflow Settings
-    MLFLOW_TRACKING_URI: str = str(BASE_DIR / "mlruns")
+    # MLflow Settings (Database backend required for modern MLflow 3+ & Model Registry)
+    MLFLOW_TRACKING_URI: str = f"sqlite:///{BASE_DIR / 'mlflow.db'}"
     MLFLOW_EXPERIMENT_NAME: str = "credit-card-fraud-detection"
     MLFLOW_MODEL_NAME: str = "fraud-detection-model"
     ARTIFACTS_DIR: str = str(BASE_DIR / "artifacts")

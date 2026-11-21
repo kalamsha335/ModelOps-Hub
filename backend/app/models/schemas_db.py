@@ -151,3 +151,4 @@ class RetrainingJob(Base):
     started_at = Column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Float, default=0.0)
+

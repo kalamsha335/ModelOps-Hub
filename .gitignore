@@ -21,18 +21,20 @@ htmlcov/
 *.db
 *.sqlite3
 modelops.db
+mlflow.db
 
 # MLflow & Local Artifacts
 mlruns/
-artifacts/models/
-artifacts/reports/
-artifacts/pipelines/
+artifacts/
 *.pkl
 *.joblib
 
 # Large Datasets & Archives
 data/raw/*.csv
 data/raw/*.zip
+data/reference/*.parquet
+data/processed/*.parquet
+data/current/*.parquet
 archive*/
 *.zip
 

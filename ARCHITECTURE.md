@@ -133,3 +133,4 @@ flowchart TD
 1. **Concurrency Lock**: Prevents duplicate overlapping retraining runs.
 2. **Cold-down Interval**: Minimum 24 hours between automated retraining runs unless manually overridden.
 3. **Challenger vs. Champion Validation**: Candidate model must outperform or meet the production model's PR-AUC and Recall thresholds before promotion. Inferior models are logged as `REJECTED_INFERIOR`.
+

@@ -7,3 +7,4 @@ DO $$
 BEGIN
     RAISE NOTICE 'ModelOps Hub Database Initialized Successfully.';
 END $$;
+
