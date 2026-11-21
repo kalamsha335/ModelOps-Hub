@@ -189,3 +189,4 @@ This guide is designed for technical interviews, system design rounds, and proje
 > 2. **Model Caching**: Store model artifacts in AWS S3 or Google Cloud Storage, caching the model file on container local SSDs using volume mounts.
 > 3. **Asynchronous Prediction Logging via Apache Kafka / AWS Kinesis**: In high throughput, writing directly to PostgreSQL for every prediction creates a database write bottleneck. Instead, the FastAPI pod emits prediction logs into a Kafka topic, and a separate worker stream ingests and aggregates them into ClickHouse or PostgreSQL in micro-batches.
 > 4. **Model Optimization with ONNX / TensorRT**: Convert the XGBoost booster to ONNX runtime or TensorRT to reduce inference latency from 4.8ms down to < 1.0ms with multi-threading."*
+

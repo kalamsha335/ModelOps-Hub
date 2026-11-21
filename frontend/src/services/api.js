@@ -39,3 +39,4 @@ export const getRetrainingHistory = (limit = 20) => api.get(`/retraining/history
 export const getTrainingHistory = (limit = 20) => api.get(`/training/history?limit=${limit}`);
 
 export default api;
+

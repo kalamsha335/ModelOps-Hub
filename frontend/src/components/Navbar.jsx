@@ -69,3 +69,4 @@ export default function Navbar({ systemHealth, modelInfo, onRefresh }) {
     </header>
   );
 }
+

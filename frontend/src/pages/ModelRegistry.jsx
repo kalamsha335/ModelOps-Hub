@@ -231,3 +231,4 @@ export default function ModelRegistry({ versions, onRefresh }) {
     </div>
   );
 }
+

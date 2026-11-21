@@ -14,3 +14,4 @@ def get_model_info():
     Returns information regarding the active serving model in production.
     """
     return serving_service.get_model_info()
+

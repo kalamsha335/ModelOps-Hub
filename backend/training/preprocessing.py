@@ -145,3 +145,4 @@ def save_reference_dataset(X_ref: pd.DataFrame, y_ref: pd.Series):
     ref_path = os.path.join(ref_dir, "reference_data.parquet")
     ref_df.to_parquet(ref_path, index=False)
     logger.info(f"Persisted reference baseline dataset ({len(ref_df):,} rows) to: {ref_path}")
+

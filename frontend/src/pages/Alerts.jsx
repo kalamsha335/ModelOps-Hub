@@ -91,3 +91,4 @@ export default function Alerts({ alerts, onRefresh }) {
     </div>
   );
 }
+

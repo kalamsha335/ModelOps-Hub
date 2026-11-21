@@ -181,3 +181,4 @@ def test_register_and_governance_lifecycle(registry, db_session):
 
     versions_list = registry.list_versions(model_name, db=db_session)
     assert len(versions_list) >= 2
+

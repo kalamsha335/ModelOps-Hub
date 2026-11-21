@@ -66,3 +66,4 @@ export default function Sidebar({ activeTab, setActiveTab, alertCount = 0 }) {
     </aside>
   );
 }
+

@@ -264,3 +264,4 @@ export default function DriftMonitoring({ driftReport, onRefresh }) {
     </div>
   );
 }
+

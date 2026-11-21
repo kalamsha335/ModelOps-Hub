@@ -96,3 +96,4 @@ class ManualDriftCheckRequest(BaseModel):
     """Request to run ad-hoc drift evaluation on a batch of transactions."""
     sample_size: int = Field(default=2000, ge=100, le=50000)
     generate_evidently_html: bool = Field(default=True)
+

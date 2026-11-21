@@ -211,3 +211,4 @@ export default function Retraining({ history, onRefresh }) {
     </div>
   );
 }
+

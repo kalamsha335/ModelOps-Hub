@@ -157,3 +157,4 @@ def perform_eda(df: pd.DataFrame, save_report_dir: str = None) -> Dict[str, Any]
         logger.info(f"Saved EDA report to {report_path}")
 
     return eda_summary
+

@@ -111,3 +111,4 @@ def log_training_run(
             "run_name": run_name,
             "local_artifact_dir": run_artifacts_dir
         }
+

@@ -119,3 +119,4 @@ def test_champion_model_selection():
     report = generate_comparison_report(mock_results)
     assert report["champion_model"] == "ModelA"
     assert report["rankings"][0]["model_name"] == "ModelA"
+

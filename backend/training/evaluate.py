@@ -164,3 +164,4 @@ def generate_comparison_report(
         "champion_model": best_model,
         "rankings": ranked_models
     }
+

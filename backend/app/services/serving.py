@@ -270,3 +270,4 @@ class ModelServingService:
 
 # Module-level serving service
 serving_service = ModelServingService()
+

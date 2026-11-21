@@ -33,3 +33,4 @@ def get_training_history(
         "artifact_uri": r.artifact_uri,
         "created_at": r.created_at.isoformat() if r.created_at else None
     } for r in runs]
+

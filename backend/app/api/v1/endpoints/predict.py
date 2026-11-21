@@ -106,3 +106,4 @@ def get_prediction_logs(
             "logged_at": l.logged_at.isoformat() if l.logged_at else None
         } for l in logs]
     }
+

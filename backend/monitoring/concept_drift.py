@@ -239,3 +239,4 @@ class ConceptDriftDetector:
 
 # Module-level instance
 concept_drift_detector = ConceptDriftDetector()
+
