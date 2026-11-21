@@ -1,5 +1,7 @@
 # ModelOps Hub - System Architecture & Engineering Design
 
+---
+
 ## 1. High-Level System Architecture
 
 ```mermaid
@@ -8,8 +10,8 @@ flowchart TD
         RawData[("Raw Transaction Data\n(creditcard.csv)")]
         ValData["Data Validator\n(Pandas & Schema Checks)"]
         SplitData["Stratified Train/Val/Test Split\n& Feature Preprocessor"]
-        RefStore[("Reference Dataset Store")]
-        CurrStore[("Production Inbound Data Store")]
+        RefStore[("Reference Dataset Store\n(reference_data.parquet)")]
+        CurrStore[("Production Inbound Stream\n(prediction_logs)")]
         RawData --> ValData --> SplitData
         SplitData --> RefStore
     end
@@ -23,21 +25,21 @@ flowchart TD
 
     subgraph Registry_Layer ["3. MLflow Tracking & Model Registry"]
         MLflowTrack["MLflow Experiment Tracker\n(Parameters, Metrics, Artifacts)"]
-        ModelReg["MLflow Model Registry\n(Logical Stages: Dev -> Staging -> Prod)"]
-        Guardrail["Production Promotion Guardrail\n(PR-AUC >= 0.80, Recall >= 0.82)"]
+        ModelReg["MLflow Model Registry\n(Aliases: @champion, @production, @staging)"]
+        Guardrail["Production Promotion Guardrail\n(PR-AUC >= 0.80, Recall >= 0.75)"]
         Evaluator --> MLflowTrack --> ModelReg
         ModelReg --> Guardrail
     end
 
-    subgraph Database_Layer ["4. PostgreSQL Application State"]
-        PostgresDB[("PostgreSQL Database\n- model_metadata\n- model_versions\n- prediction_logs\n- drift_reports\n- drift_alerts\n- retraining_jobs")]
+    subgraph Database_Layer ["4. Application Database (PostgreSQL / SQLite)"]
+        PostgresDB[("Metadata & State Store\n- models\n- model_versions\n- model_deployments\n- prediction_logs\n- drift_reports\n- drift_alerts\n- retraining_jobs\n- training_runs")]
     end
 
     subgraph Serving_Layer ["5. FastAPI Model Serving Layer"]
         FastAPIApp["FastAPI REST Server (/api/v1)"]
-        ModelLoader["Dynamic Production Model Loader\n(Hot Reloading from Registry)"]
+        ModelLoader["Dynamic Production Model Loader\n(In-Memory Hot Reloading)"]
         InferenceEngine["Preprocessed Inference Engine"]
-        Logger["Prediction Logger & Latency Monitor"]
+        Logger["Prediction Audit Logger\n(Sub-5ms Latency Tracking)"]
 
         Guardrail --> ModelLoader --> InferenceEngine
         FastAPIApp --> InferenceEngine --> Logger
@@ -45,11 +47,11 @@ flowchart TD
         Logger --> PostgresDB
     end
 
-    subgraph Monitoring_Layer ["6. Drift & Degradation Monitoring"]
-        EvidentlyEngine["Evidently AI Drift Engine"]
-        StatEngine["Statistical Drift Detector\n(PSI & Kolmogorov-Smirnov Tests)"]
-        PerfEngine["Concept Drift / Performance Degradation\n(Ground Truth vs Predictions)"]
-        AlertEngine["Drift Alert Manager\n(Severity: Warning / Critical)"]
+    subgraph Monitoring_Layer ["6. Statistical & Concept Drift Monitoring"]
+        EvidentlyEngine["Evidently AI 0.7 Snapshot Engine\n(Interactive Plotly Dashboards)"]
+        StatEngine["Statistical Drift Detector\n(Decile PSI & Two-Sample KS Tests)"]
+        PerfEngine["Concept Drift / Performance Degradation\n(Delayed Ground Truth vs Predictions)"]
+        AlertEngine["Drift Alert Manager\n(Severity: WARNING / CRITICAL)"]
 
         RefStore --> EvidentlyEngine
         CurrStore --> EvidentlyEngine
@@ -64,73 +66,217 @@ flowchart TD
 
     subgraph Automation_Layer ["7. Prefect Orchestrator & Retraining Loop"]
         PrefectScheduler["Prefect Workflow Orchestration"]
-        RetrainTrigger{"Trigger Decision Engine\n- Critical PSI > 0.30\n- Perf Degradation\n- Scheduled / Manual"}
+        RetrainTrigger{"Trigger Decision Engine\n- Critical PSI >= 0.30\n- Recall < 0.75\n- Scheduled / Manual"}
         RetrainExec["Retraining Pipeline Execution"]
-        SafetyCheck{"Candidate vs Prod Validation\nIs Candidate >= Production?"}
+        SafetyCheck{"Anti-Regression Guardrail\nComposite: 0.6*PR-AUC + 0.4*Rec\nCandidate > Production?"}
 
         AlertEngine --> RetrainTrigger
         PrefectScheduler --> RetrainTrigger
-        RetrainTrigger -->|Yes| RetrainExec
+        RetrainTrigger -->|Trigger Fire| RetrainExec
         RetrainExec --> SafetyCheck
         SafetyCheck -->|Passed| ModelReg
         SafetyCheck -->|Rejected (Inferior)| PostgresDB
     end
 
-    subgraph Presentation_Layer ["8. ModelOps Console (React + Vite + Tailwind)"]
+    subgraph Presentation_Layer ["8. ModelOps Console (React 18 + Vite + Tailwind)"]
         OverviewDash["Overview Dashboard"]
-        RegistryUI["Model Registry & Stage Manager"]
-        TrainUI["Training & Tuning Analytics"]
-        DriftUI["Evidently & Distribution Inspector"]
-        AlertUI["Drift Alerts & Action Center"]
+        RegistryUI["Model Registry & Stage Governance"]
+        DriftUI["Data Drift & PSI Inspector"]
+        ConceptUI["Concept Drift & Delayed Feedback"]
+        AlertUI["Active Alerts Center"]
         RetrainUI["Retraining Workflow Control"]
         PlaygroundUI["Live Prediction Playground"]
 
-        OverviewDash & RegistryUI & TrainUI & DriftUI & AlertUI & RetrainUI & PlaygroundUI <--> FastAPIApp
+        OverviewDash & RegistryUI & DriftUI & ConceptUI & AlertUI & RetrainUI & PlaygroundUI <--> FastAPIApp
     end
 ```
 
 ---
 
-## 2. Component Breakdown
+## 2. Sequence Diagrams
 
-### A. Data Layer
-- **Ingestion & Validation**: Reads the ULB European Credit Card Fraud Detection dataset (284,807 transactions, 492 fraud cases, 0.172% positive class).
-- **Leakage Prevention**: Standardizes `Amount` and `Time` using `RobustScaler` fit strictly on the training partition; PCA features `V1-V28` are preserved.
-- **Data Partitioning**: Stratified 70/15/15 split into Train, Validation, and Test sets. Reference baseline data is persisted for drift detection.
+### A. Real-Time Inference & Delayed Feedback Loop
 
-### B. Machine Learning & Training Layer
-- **Models**:
-  1. Regularized Logistic Regression with class-weight balancing (`class_weight="balanced"`).
-  2. XGBoost Classifier with `scale_pos_weight` tuned dynamically based on negative-to-positive ratio.
-- **Optimization**: Optuna Bayesian hyperparameter search using 5-Fold Stratified Cross-Validation maximizing PR-AUC (Precision-Recall Area Under Curve).
-- **Metrics Selection Priority**:
-  1. **PR-AUC (Primary)**: Focuses directly on minority fraud detection performance without being inflated by overwhelming true negatives.
-  2. **Recall (Fraud Detection Rate)**: Minimizes false negatives (undetected fraud).
-  3. **Precision**: Controls false alerts that burden human fraud analysts.
-  4. **ROC-AUC & F1-Score**: Secondary broad discriminative metrics.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client / Payment Gateway
+    participant API as FastAPI Serving Layer
+    participant Serving as In-Memory Serving Service
+    participant DB as Relational Database
+    actor Analyst as Fraud Analyst / Bank
 
-### C. MLflow Model Registry & Stage Promotion
-- **Storage**: PostgreSQL backend store with persistent local/cloud artifact storage.
-- **Lifecycle Management**:
-  - `Development`: Raw tuned models from experimental runs.
-  - `Staging`: Candidate models passing automated unit and validation checks.
-  - `Production`: Validated models active for live serving.
-- **Rollback**: Instant atomic pointer swap back to previous production version if anomalies occur.
+    Client->>API: POST /api/v1/predict (Transaction Features)
+    API->>Serving: Score with @production Model
+    Serving-->>API: Fraud Probability & Class (1.8ms)
+    API->>DB: Log Transaction to prediction_logs
+    API-->>Client: PredictionResponse (is_fraud, probability, log_id)
 
-### D. Data Drift & Statistical Testing
-- **Evidently AI**: Automated DataDriftPreset reports comparing baseline reference distributions to current live production transactions.
-- **Population Stability Index (PSI)**:
-  - $\text{PSI} = \sum \left( \text{Actual}\% - \text{Expected}\% \right) \times \ln\left( \frac{\text{Actual}\%}{\text{Expected}\%} \right)$
-  - Thresholds: $< 0.10$ Stable, $0.10 - 0.20$ Moderate Drift (Warning), $> 0.20$ Significant Drift (Critical).
-- **Kolmogorov-Smirnov (KS) Test**: Two-sample non-parametric test comparing cumulative distribution functions ($p\text{-value} < 0.05$ indicates distribution shift).
+    Note over Client,Analyst: 30 to 90 Days Settlement Window (Chargebacks)
 
-### E. Concept Drift vs. Data Drift
-- **Data Drift**: $P(X)$ changes while $P(Y|X)$ remains constant (e.g., changes in transaction amounts or user spending patterns).
-- **Concept Drift**: $P(Y|X)$ changes (e.g., fraudsters devise novel evasion mechanisms such that a legitimate-looking pattern is actually fraud).
-- When ground-truth labels arrive with latency, performance metrics are recalculated; degradation triggers retrain workflows.
+    Analyst->>API: POST /api/v1/feedback (log_id, true_label=1)
+    API->>DB: Update ground_truth in prediction_logs
+    API->>API: Recompute Confusion Matrix & PR-AUC
+    opt If Production Recall < 0.75
+        API->>DB: Log PERFORMANCE_DEGRADATION Alert
+    end
+    API-->>Analyst: Feedback Accepted
+```
 
-### F. Automated Retraining Guardrails
-1. **Concurrency Lock**: Prevents duplicate overlapping retraining runs.
-2. **Cold-down Interval**: Minimum 24 hours between automated retraining runs unless manually overridden.
-3. **Challenger vs. Champion Validation**: Candidate model must outperform or meet the production model's PR-AUC and Recall thresholds before promotion. Inferior models are logged as `REJECTED_INFERIOR`.
+### B. Automated Retraining with Anti-Regression Guardrail
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Mon as Monitoring Engine
+    participant Prefect as Prefect Workflow Flow
+    participant Train as Optuna Training Pipeline
+    participant Guard as Anti-Regression Guardrail
+    participant MLflow as MLflow Registry
+    participant Serving as FastAPI Serving Process
+
+    Mon->>Prefect: Event Trigger: CRITICAL_FEATURE_DRIFT (PSI >= 0.30)
+    Prefect->>Prefect: Check Duplicate Retraining Locks
+    Prefect->>Train: Execute Stratified 5-Fold HPO on New Ingestion Window
+    Train->>MLflow: Log Candidate Parameters, Metrics, Artifacts
+    Train-->>Prefect: Return Challenger Model & Holdout Metrics
+    Prefect->>Guard: Evaluate Champion vs. Challenger
+    
+    alt Challenger Score > Champion Score
+        Guard->>MLflow: Assign @production Alias to Challenger
+        Guard->>Serving: Signal In-Memory Hot Reload
+        Serving->>Serving: Atomic Model Pointer Swap (Zero Downtime)
+        Guard-->>Prefect: Retraining Status: SUCCESS_PROMOTED
+    else Challenger Score <= Champion Score
+        Guard->>Guard: Reject Challenger (Prevent Performance Regression)
+        Guard-->>Prefect: Retraining Status: SKIPPED_INFERIOR
+    end
+```
+
+---
+
+## 3. Database Entity-Relationship (ER) Model
+
+```mermaid
+erDiagram
+    MODELS ||--o{ MODEL_VERSIONS : contains
+    MODEL_VERSIONS ||--o{ MODEL_DEPLOYMENTS : deployed_as
+    DRIFT_REPORTS ||--o{ DRIFT_ALERTS : generates
+    MODEL_VERSIONS ||--o{ RETRAINING_JOBS : produced_by
+
+    MODELS {
+        int id PK
+        string name UK
+        string description
+        datetime created_at
+    }
+
+    MODEL_VERSIONS {
+        int id PK
+        int model_id FK
+        string version
+        string stage
+        string mlflow_run_id
+        string algorithm
+        json metrics
+        json parameters
+        string artifact_path
+        datetime created_at
+    }
+
+    MODEL_DEPLOYMENTS {
+        int id PK
+        string model_name
+        string model_version
+        string stage
+        string deployed_by
+        string status
+        text deployment_notes
+        datetime deployed_at
+    }
+
+    PREDICTION_LOGS {
+        int id PK
+        string log_id UK
+        string model_version
+        json input_features
+        int prediction
+        float probability
+        int ground_truth
+        float latency_ms
+        datetime created_at
+    }
+
+    DRIFT_REPORTS {
+        int id PK
+        string report_id UK
+        string status
+        float drift_score
+        int drifted_features_count
+        int total_features_count
+        json feature_metrics
+        string evidently_report_html_path
+        datetime created_at
+    }
+
+    DRIFT_ALERTS {
+        int id PK
+        int drift_report_id FK
+        string severity
+        string affected_feature
+        string drift_metric
+        float metric_value
+        float threshold_value
+        string recommended_action
+        string status
+        datetime detected_at
+    }
+
+    RETRAINING_JOBS {
+        int id PK
+        string retraining_id UK
+        string trigger_reason
+        string status
+        string previous_model_version
+        string new_model_version
+        json champion_metrics
+        json challenger_metrics
+        text decision_rationale
+        datetime started_at
+        datetime completed_at
+    }
+
+    TRAINING_RUNS {
+        int id PK
+        string run_id UK
+        string experiment_name
+        string model_type
+        json parameters
+        json metrics
+        json confusion_matrix
+        float training_duration_seconds
+        datetime created_at
+    }
+
+    PERFORMANCE_METRICS {
+        int id PK
+        string model_version
+        int evaluation_window_size
+        float precision
+        float recall
+        float f1_score
+        float pr_auc
+        float roc_auc
+        int false_positives
+        int false_negatives
+        datetime calculated_at
+    }
+```
+
+---
+
+## 4. Failure Recovery & High-Availability Modes
+
+1. **Database Fallback**: Dual-engine SQLAlchemy driver tries PostgreSQL 15 on port 5432. If PostgreSQL is offline or unreachable, it smoothly falls back to SQLite (`modelops.db`), allowing 100% functionality without requiring external infrastructure.
+2. **Offline Evidently Rendering**: If network access or fonts are unavailable, the monitoring service generates an executive HTML dashboard first, and overlays Evidently AI 0.7 snapshot data without blocking the API request thread.
+3. **Hot Reload Memory Isolation**: Prediction serving loads model weights into an isolated memory slot. If model reloading fails during rollback or promotion, the previous valid model remains active without serving degradation.

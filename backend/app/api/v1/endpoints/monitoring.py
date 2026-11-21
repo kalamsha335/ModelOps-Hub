@@ -6,8 +6,6 @@ and model performance tracking with true labels.
 
 import os
 import logging
-from pathlib import Path
-import numpy as np
 import pandas as pd
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -93,24 +91,13 @@ def trigger_drift_analysis(payload: ManualDriftCheckRequest, db: Session = Depen
     Triggers an immediate statistical drift evaluation comparing current production data against baseline.
     """
     try:
-        sample_size = payload.sample_size
-        ref_path = Path(settings.REFERENCE_DATA_DIR) / "reference_data.parquet"
-        raw_path = Path(settings.RAW_DATA_PATH)
+        raw_path = settings.RAW_DATA_PATH
+        if not os.path.exists(raw_path):
+            raise FileNotFoundError(f"Raw transaction dataset not found at {raw_path}")
 
-        # High-performance batch sampling:
-        # Use parquet reference data with natural production variance if available, else sample raw CSV
-        if ref_path.exists():
-            ref_df = pd.read_parquet(ref_path)
-            sample_n = min(len(ref_df), sample_size)
-            sample_df = ref_df.sample(sample_n, random_state=None).copy()
-            # Add subtle production variance to numerical features
-            num_cols = [c for c in sample_df.columns if c not in ["Class", "Time"]]
-            noise = np.random.normal(0, 0.05, size=(len(sample_df), len(num_cols)))
-            sample_df[num_cols] += noise
-        elif raw_path.exists():
-            sample_df = pd.read_csv(raw_path, nrows=sample_size)
-        else:
-            raise FileNotFoundError("Neither reference data nor raw data found for drift evaluation.")
+        df = pd.read_csv(raw_path)
+        sample_size = min(len(df), payload.sample_size)
+        sample_df = df.sample(sample_size, random_state=None)
 
         res = drift_detector.run_drift_analysis(
             current_df=sample_df,
